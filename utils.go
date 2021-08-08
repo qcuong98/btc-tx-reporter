@@ -169,15 +169,20 @@ func writeFeeRecordsToCSV(records [][]string, fileDir string) {
 	writer.Flush()
 }
 
-type UTXO struct {
-	Value uint64 `json:"value"`
+type BalanceInfo struct {
+	TotalSum uint64 `json:"funded_txo_sum"`
+	SpentSum uint64 `json:"spent_txo_sum"`
+}
+
+type AccountInfo struct {
+	Balance BalanceInfo `json:"chain_stats"`
 }
 
 func balanceAddresses(btcClient *rpcclient.Client, addresses []string) [][]string {
 	records := [][]string{}
 
 	for _, address := range addresses {
-		requestDir := fmt.Sprintf("https://blockstream.info/api/address/%v/utxo", address)
+		requestDir := fmt.Sprintf("https://blockstream.info/api/address/%v", address)
 
 		response, err := http.Get(requestDir)
 		if err != nil {
@@ -187,16 +192,13 @@ func balanceAddresses(btcClient *rpcclient.Client, addresses []string) [][]strin
 		if err != nil {
 			panic(err)
 		}
-		var res []UTXO
+		var res AccountInfo
 		err = json.Unmarshal(responseData, &res)
 		if err != nil {
 			panic(err)
 		}
 
-		balance := uint64(0)
-		for _, utxo := range res {
-			balance += utxo.Value
-		}
+		balance := res.Balance.TotalSum - res.Balance.SpentSum
 
 		records = append(records, []string{
 			address,
