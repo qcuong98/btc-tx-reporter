@@ -154,7 +154,7 @@ func getOutTxsFromAddresses(btcClient *rpcclient.Client, addresses []string) [][
 	return records
 }
 
-func writeRecordsToCSV(records [][]string, fileDir string) {
+func writeFeeRecordsToCSV(records [][]string, fileDir string) {
 	file, err := os.Create(fileDir)
 	if err != nil {
 		panic(err)
@@ -163,6 +163,61 @@ func writeRecordsToCSV(records [][]string, fileDir string) {
 
 	writer := csv.NewWriter(file)
 	writer.Write([]string{"txID", "from", "to", "amount", "fee"})
+	for _, record := range records {
+		writer.Write(record)
+	}
+	writer.Flush()
+}
+
+type UTXO struct {
+	Value uint64 `json:"value"`
+}
+
+func balanceAddresses(btcClient *rpcclient.Client, addresses []string) [][]string {
+	records := [][]string{}
+
+	for _, address := range addresses {
+		requestDir := fmt.Sprintf("https://blockstream.info/api/address/%v/utxo", address)
+
+		response, err := http.Get(requestDir)
+		if err != nil {
+			panic(err)
+		}
+		responseData, err := ioutil.ReadAll(response.Body)
+		if err != nil {
+			panic(err)
+		}
+		var res []UTXO
+		err = json.Unmarshal(responseData, &res)
+		if err != nil {
+			panic(err)
+		}
+
+		balance := uint64(0)
+		for _, utxo := range res {
+			balance += utxo.Value
+		}
+
+		records = append(records, []string{
+			address,
+			strconv.FormatUint(balance, 10),
+		})
+
+		fmt.Printf("Scanned address %v, balance %v\n", address, float64(balance)/1e8)
+
+	}
+	return records
+}
+
+func writeBalanceRecordsToCSV(records [][]string, fileDir string) {
+	file, err := os.Create(fileDir)
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	writer.Write([]string{"address", "balance"})
 	for _, record := range records {
 		writer.Write(record)
 	}

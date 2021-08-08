@@ -25,7 +25,9 @@ func main() {
 	addresses := readAddresses(inputDir)
 	fmt.Printf("Len of addresses: %v\n", len(addresses))
 
-	records := getOutTxsFromAddresses(btcClient, addresses)
+	records := balanceAddresses(btcClient, addresses)
+	writeBalanceRecordsToCSV(records, outputDir)
 
-	writeRecordsToCSV(records, outputDir)
+	// records := getOutTxsFromAddresses(btcClient, addresses)
+	// writeFeeRecordsToCSV(records, outputDir)
 }
