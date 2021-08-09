@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/btcsuite/btcd/rpcclient"
 )
@@ -181,21 +182,32 @@ type AccountInfo struct {
 func balanceAddresses(btcClient *rpcclient.Client, addresses []string) [][]string {
 	records := [][]string{}
 
-	for _, address := range addresses {
-		requestDir := fmt.Sprintf("https://blockstream.info/api/address/%v", address)
-
-		response, err := http.Get(requestDir)
-		if err != nil {
-			panic(err)
-		}
-		responseData, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			panic(err)
-		}
+	for idx, address := range addresses {
 		var res AccountInfo
-		err = json.Unmarshal(responseData, &res)
-		if err != nil {
-			panic(err)
+
+		for {
+			requestDir := fmt.Sprintf("https://blockstream.info/api/address/%v", address)
+
+			response, err := http.Get(requestDir)
+			if err != nil {
+				fmt.Printf("Retrying for address %v\n", address)
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			responseData, err := ioutil.ReadAll(response.Body)
+			if err != nil {
+				fmt.Printf("Retrying for address %v\n", address)
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			err = json.Unmarshal(responseData, &res)
+			if err != nil {
+				fmt.Printf("Retrying for address %v\n", address)
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			break
 		}
 
 		balance := res.Balance.TotalSum - res.Balance.SpentSum
@@ -205,7 +217,11 @@ func balanceAddresses(btcClient *rpcclient.Client, addresses []string) [][]strin
 			strconv.FormatUint(balance, 10),
 		})
 
-		fmt.Printf("Scanned address %v, balance %v\n", address, float64(balance)/1e8)
+		if (idx+1)%200 == 0 {
+			fmt.Printf("Scanned %v addresses\n", idx+1)
+			time.Sleep(15 * time.Second)
+		}
+		// fmt.Printf("Scanned address %v, balance %v\n", address, float64(balance)/1e8)
 
 	}
 	return records
