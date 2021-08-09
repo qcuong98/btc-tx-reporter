@@ -75,81 +75,102 @@ type TxInfo struct {
 func getOutTxsFromAddresses(btcClient *rpcclient.Client, addresses []string) [][]string {
 	records := [][]string{}
 
-	for _, address := range addresses {
-		lastSeenTxID := ""
-
+	for idx, address := range addresses {
+		var tmpRecords [][]string
 		for {
-			requestDir := fmt.Sprintf("https://blockstream.info/api/address/%v/txs/chain/%v", address, lastSeenTxID)
+			lastSeenTxID := ""
+			ok := true
+			tmpRecords = [][]string{}
 
-			response, err := http.Get(requestDir)
-			if err != nil {
-				panic(err)
-			}
-			responseData, err := ioutil.ReadAll(response.Body)
-			if err != nil {
-				panic(err)
-			}
-			var res []TxInfo
-			err = json.Unmarshal(responseData, &res)
-			if err != nil {
-				panic(err)
-			}
+			for {
+				requestDir := fmt.Sprintf("https://blockstream.info/api/address/%v/txs/chain/%v", address, lastSeenTxID)
 
-			for _, tx := range res {
-				isSend := true
-				for idx := 0; idx < len(tx.Vin); idx++ {
-					if tx.Vin[idx].PrevOut.Address != address {
-						isSend = false
-						break
-					}
+				response, err := http.Get(requestDir)
+				if err != nil {
+					ok = false
+					break
 				}
-				if !isSend {
-					continue
+				responseData, err := ioutil.ReadAll(response.Body)
+				if err != nil {
+					ok = false
+					break
+				}
+				var res []TxInfo
+				err = json.Unmarshal(responseData, &res)
+				if err != nil {
+					ok = false
+					break
 				}
 
-				receiveAddresses := []string{}
-				receiveAmount := uint64(0)
-				for _, vout := range tx.Vout {
-					if tx.Vin[0].PrevOut.Address != vout.Address {
-						receiveAmount += vout.Value
-						receiveAddresses = append(receiveAddresses, vout.Address)
-					}
-				}
-				if len(receiveAddresses) == 0 {
-					for _, vout := range tx.Vout {
-						receiveAmount += vout.Value
-						receiveAddresses = append(receiveAddresses, vout.Address)
-					}
-				}
-				if len(receiveAddresses) != 1 {
-					isEqual := true
-					for idx := 1; idx < len(receiveAddresses); idx++ {
-						if receiveAddresses[idx] != receiveAddresses[0] {
-							isEqual = false
+				for _, tx := range res {
+					isSend := true
+					for idx := 0; idx < len(tx.Vin); idx++ {
+						if tx.Vin[idx].PrevOut.Address != address {
+							isSend = false
 							break
 						}
 					}
-					if !isEqual {
-						fmt.Printf("More than one receiver txID: %v\n", tx.TxID)
+					if !isSend {
 						continue
 					}
+
+					receiveAddresses := []string{}
+					receiveAmount := uint64(0)
+					for _, vout := range tx.Vout {
+						if tx.Vin[0].PrevOut.Address != vout.Address {
+							receiveAmount += vout.Value
+							receiveAddresses = append(receiveAddresses, vout.Address)
+						}
+					}
+					if len(receiveAddresses) == 0 {
+						for _, vout := range tx.Vout {
+							receiveAmount += vout.Value
+							receiveAddresses = append(receiveAddresses, vout.Address)
+						}
+					}
+					if len(receiveAddresses) != 1 {
+						isEqual := true
+						for idx := 1; idx < len(receiveAddresses); idx++ {
+							if receiveAddresses[idx] != receiveAddresses[0] {
+								isEqual = false
+								break
+							}
+						}
+						if !isEqual {
+							fmt.Printf("More than one receiver txID: %v\n", tx.TxID)
+							continue
+						}
+					}
+					tmpRecords = append(tmpRecords, []string{
+						tx.TxID,
+						tx.Vin[0].PrevOut.Address,
+						receiveAddresses[0],
+						strconv.FormatUint(receiveAmount, 10),
+						strconv.FormatUint(tx.Fee, 10),
+					})
 				}
-				records = append(records, []string{
-					tx.TxID,
-					tx.Vin[0].PrevOut.Address,
-					receiveAddresses[0],
-					strconv.FormatUint(receiveAmount, 10),
-					strconv.FormatUint(tx.Fee, 10),
-				})
+
+				if len(res) < 25 {
+					break
+				}
+				lastSeenTxID = res[24].TxID
 			}
 
-			if len(res) < 25 {
+			if ok {
 				break
+			} else {
+				fmt.Printf("Retrying for address %v\n", address)
+				time.Sleep(1 * time.Second)
 			}
-			lastSeenTxID = res[24].TxID
 		}
 
-		fmt.Printf("Scanned address %v\n", address)
+		records = append(records, tmpRecords...)
+
+		if (idx+1)%200 == 0 {
+			fmt.Printf("Scanned %v addresses\n", idx+1)
+			time.Sleep(5 * time.Second)
+		}
+		// fmt.Printf("Scanned address %v\n", address)
 
 	}
 	return records
